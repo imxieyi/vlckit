@@ -1,0 +1,150 @@
+From 909714e5b0851f33a0c5711f2f23c7c0801edc5e Mon Sep 17 00:00:00 2001
+From: Yi Xie <imxieyi@users.noreply.github.com>
+Date: Fri, 28 Mar 2025 03:19:33 +0900
+Subject: [PATCH] Pass HTTP cookies to input
+
+---
+ include/vlc_http.h     |  1 +
+ include/vlc_player.h   | 10 ++++++++++
+ lib/media_player.c     |  2 ++
+ src/input/access.c     |  5 +++++
+ src/misc/httpcookies.c | 20 ++++++++++++++++++++
+ src/player/player.c    | 15 +++++++++++++++
+ 6 files changed, 53 insertions(+)
+
+diff --git a/include/vlc_http.h b/include/vlc_http.h
+index 976f6e664a..9e705d5bfb 100644
+--- a/include/vlc_http.h
++++ b/include/vlc_http.h
+@@ -70,6 +70,7 @@ VLC_API char *vlc_http_auth_FormatAuthorizationHeader
+ typedef struct vlc_http_cookie_jar_t vlc_http_cookie_jar_t;
+ 
+ VLC_API vlc_http_cookie_jar_t * vlc_http_cookies_new( void ) VLC_USED;
++VLC_API vlc_http_cookie_jar_t * vlc_http_cookies_copy( vlc_http_cookie_jar_t * old) VLC_USED;
+ VLC_API void vlc_http_cookies_clear( vlc_http_cookie_jar_t * p_jar );
+ VLC_API void vlc_http_cookies_destroy( vlc_http_cookie_jar_t * p_jar );
+ 
+diff --git a/include/vlc_player.h b/include/vlc_player.h
+index 7a7aa203b2..62440cc8b6 100644
+--- a/include/vlc_player.h
++++ b/include/vlc_player.h
+@@ -427,6 +427,16 @@ vlc_player_Start(vlc_player_t *player);
+ VLC_API int
+ vlc_player_Stop(vlc_player_t *player);
+ 
++/**
++ * Set cookies for the player.
++ *
++ * @param player locked player instance
++ * @param cookies opaque vlc_http_cookie_jar_t
++ * @return VLC_SUCCESS or a VLC error code
++ */
++VLC_API int
++vlc_player_SetCookies(vlc_player_t *player, void* cookies);
++
+ /**
+  * Pause the playback
+  *
+diff --git a/lib/media_player.c b/lib/media_player.c
+index 00c6ad86f7..b63b7cdc99 100644
+--- a/lib/media_player.c
++++ b/lib/media_player.c
+@@ -987,6 +987,8 @@ int libvlc_media_player_play( libvlc_media_player_t *p_mi )
+     {
+         vlc_value_t cookies = { .p_address = p_mi->p_md->p_cookie_jar };
+         var_SetChecked( p_mi, "http-cookies", VLC_VAR_ADDRESS, cookies );
++        vlc_http_cookie_jar_t* copy = vlc_http_cookies_copy(p_mi->p_md->p_cookie_jar);
++        vlc_player_SetCookies(player, copy);
+     }
+ 
+     int ret = vlc_player_Start(player);
+diff --git a/src/input/access.c b/src/input/access.c
+index fe023d797e..f3f75435a8 100644
+--- a/src/input/access.c
++++ b/src/input/access.c
+@@ -108,6 +108,11 @@ static stream_t *access_New(vlc_object_t *parent, input_thread_t *input,
+     access->b_preparsing = preparsing;
+     priv = vlc_stream_Private(access);
+ 
++    void* cookies = var_GetAddress(input, "http-cookies");
++    if (cookies != NULL) {
++        var_SetAddress(access, "http-cookies", cookies);
++    }
++
+     if (unlikely(access->psz_url == NULL))
+         goto error;
+ 
+diff --git a/src/misc/httpcookies.c b/src/misc/httpcookies.c
+index a8abf02164..0bb8cbe573 100644
+--- a/src/misc/httpcookies.c
++++ b/src/misc/httpcookies.c
+@@ -264,6 +264,18 @@ error:
+     return NULL;
+ }
+ 
++VLC_MALLOC VLC_USED
++static http_cookie_t * cookie_copy(http_cookie_t * old) {
++    http_cookie_t* new = malloc(sizeof(http_cookie_t));
++    new->psz_name = strdup(old->psz_name);
++    new->psz_value = strdup(old->psz_value);
++    new->psz_domain = strdup(old->psz_domain);
++    new->psz_path = strdup(old->psz_path);
++    new->b_host_only = old->b_host_only;
++    new->b_secure = old->b_secure;
++    return new;
++}
++
+ struct vlc_http_cookie_jar_t
+ {
+     vlc_array_t cookies;
+@@ -282,6 +294,14 @@ vlc_http_cookie_jar_t * vlc_http_cookies_new(void)
+     return jar;
+ }
+ 
++vlc_http_cookie_jar_t * vlc_http_cookies_copy( vlc_http_cookie_jar_t * old)
++{
++    vlc_http_cookie_jar_t* copy = vlc_http_cookies_new();
++    for( size_t i = 0; i < vlc_array_count( &old->cookies ); i++ )
++        vlc_array_append(&copy->cookies, cookie_copy(vlc_array_item_at_index(&old->cookies, i)));
++    return copy;
++}
++
+ void vlc_http_cookies_clear( vlc_http_cookie_jar_t * p_jar )
+ {
+     if ( !p_jar )
+diff --git a/src/player/player.c b/src/player/player.c
+index 2c8f311eeb..b5cd0b9f2b 100644
+--- a/src/player/player.c
++++ b/src/player/player.c
+@@ -1203,6 +1203,12 @@ vlc_player_Start(vlc_player_t *player)
+     }
+     assert(!player->input->started);
+ 
++    void* cookies = var_GetAddress(player, "http-cookies");
++    if (cookies != NULL) {
++        var_Create(player->input->thread, "http-cookies", VLC_VAR_ADDRESS);
++        var_SetAddress(player->input->thread, "http-cookies", cookies);
++    }
++
+     if (player->start_paused)
+     {
+         var_Create(player->input->thread, "start-paused", VLC_VAR_BOOL);
+@@ -1218,6 +1224,15 @@ vlc_player_Start(vlc_player_t *player)
+     return ret;
+ }
+ 
++int
++vlc_player_SetCookies(vlc_player_t *player, void* cookies)
++{
++    void* old = var_GetAddress(player, "http-cookies");
++    if (old != NULL)
++        vlc_http_cookies_destroy(old);
++    return var_SetAddress(player, "http-cookies", cookies);
++}
++
+ int
+ vlc_player_Stop(vlc_player_t *player)
+ {
+-- 
+2.39.5 (Apple Git-154)
+
