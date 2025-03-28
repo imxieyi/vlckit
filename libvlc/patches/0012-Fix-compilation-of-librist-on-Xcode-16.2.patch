@@ -1,0 +1,25 @@
+From d3edf21182273fb21b8d5ccda5f06e9af1b49382 Mon Sep 17 00:00:00 2001
+From: Yi Xie <imxieyi@users.noreply.github.com>
+Date: Fri, 28 Mar 2025 15:24:48 +0900
+Subject: [PATCH] Fix compilation of librist on Xcode 16.2
+
+---
+ contrib/src/librist/rules.mak | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/contrib/src/librist/rules.mak b/contrib/src/librist/rules.mak
+index e7adc4e332..151364422d 100644
+--- a/contrib/src/librist/rules.mak
++++ b/contrib/src/librist/rules.mak
+@@ -20,7 +20,7 @@ ifeq ($(call need_pkg,"librist >= 0.2"),)
+ PKGS_FOUND += librist
+ endif
+ 
+-LIBRIST_CONF = -Dbuilt_tools=false -Dtest=false
++LIBRIST_CONF = -Dbuilt_tools=false -Dtest=false -Duse_mbedtls=false -Dbuiltin_cjson=true
+ ifdef HAVE_WIN32
+ LIBRIST_CONF += -Dhave_mingw_pthreads=true
+ endif
+-- 
+2.39.5 (Apple Git-154)
+

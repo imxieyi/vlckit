@@ -8,7 +8,7 @@ BUILD_DEVICE=yes
 BUILD_SIMULATOR=yes
 BUILD_FRAMEWORK=no
 SDK_VERSION=`xcrun --sdk iphoneos --show-sdk-version`
-SDK_MIN=9.0
+SDK_MIN=12.0
 VERBOSE=no
 DISABLEDEBUG=no
 CONFIGURATION="Debug"
@@ -30,7 +30,7 @@ if [ -z "$MAKEFLAGS" ]; then
     MAKEFLAGS="-j$(sysctl -n machdep.cpu.core_count || nproc)";
 fi
 
-TESTEDHASH="17860384" # libvlc hash that this version of VLCKit is build on
+TESTEDHASH="6434ab75" # libvlc hash that this version of VLCKit is build on
 
 usage()
 {
