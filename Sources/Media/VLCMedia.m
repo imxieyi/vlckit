@@ -399,6 +399,28 @@ static const struct event_handler_entry {
     }];
 }
 
+- (int)storeHeaderForName:(NSString *)name
+                    value:(NSString *)value
+{
+    if (name == NULL || name == NULL) {
+        return -1;
+    }
+#if TARGET_OS_IPHONE
+    return libvlc_media_header_jar_store(p_md,
+                                         [name UTF8String],
+                                         [value UTF8String]);
+#else
+    return -1;
+#endif
+}
+
+- (void)clearStoredCookies
+{
+#if TARGET_OS_IPHONE
+    libvlc_media_header_jar_clear(p_md);
+#endif
+}
+
 - (int)storeCookie:(NSString *)cookie
            forHost:(NSString *)host
               path:(NSString *)path
@@ -416,7 +438,7 @@ static const struct event_handler_entry {
 #endif
 }
 
-- (void)clearStoredCookies
+- (void)clearStoredHeaders
 {
 #if TARGET_OS_IPHONE
     libvlc_media_cookie_jar_clear(p_md);

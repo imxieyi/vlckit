@@ -1,0 +1,56 @@
+From 1642cd7b499d9c65f16616c832c88f25003a1352 Mon Sep 17 00:00:00 2001
+From: Yi Xie <imxieyi@users.noreply.github.com>
+Date: Tue, 15 Apr 2025 23:40:05 +0900
+Subject: [PATCH] Fix harfbuzz build
+
+---
+ .../0003-Use-http-to-download-ragel.patch     | 24 +++++++++++++++++++
+ contrib/src/harfbuzz/rules.mak                |  1 +
+ 2 files changed, 25 insertions(+)
+ create mode 100644 contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch
+
+diff --git a/contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch b/contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch
+new file mode 100644
+index 0000000000..b2d7d5166b
+--- /dev/null
++++ b/contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch
+@@ -0,0 +1,24 @@
++From be8ad1265b9556124a7642521091fbeee3f09ae5 Mon Sep 17 00:00:00 2001
++From: Yi Xie <imxieyi@users.noreply.github.com>
++Date: Tue, 15 Apr 2025 23:38:53 +0900
++Subject: [PATCH] Use http to download ragel
++
++---
++ subprojects/ragel.wrap | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/subprojects/ragel.wrap b/subprojects/ragel.wrap
++index 1dabcbc..37af57e 100644
++--- a/subprojects/ragel.wrap
+++++ b/subprojects/ragel.wrap
++@@ -1,6 +1,6 @@
++ [wrap-file]
++ directory = ragel-6.10
++-source_url = https://www.colm.net/files/ragel/ragel-6.10.tar.gz
+++source_url = http://www.colm.net/files/ragel/ragel-6.10.tar.gz
++ source_filename = ragel-6.10.tar.gz
++ source_hash = 5f156edb65d20b856d638dd9ee2dfb43285914d9aa2b6ec779dac0270cd56c3f
++ patch_directory = ragel
++-- 
++2.39.5 (Apple Git-154)
++
+diff --git a/contrib/src/harfbuzz/rules.mak b/contrib/src/harfbuzz/rules.mak
+index c630c772c1..a640769161 100644
+--- a/contrib/src/harfbuzz/rules.mak
++++ b/contrib/src/harfbuzz/rules.mak
+@@ -17,6 +17,7 @@ harfbuzz: harfbuzz-$(HARFBUZZ_VERSION).tar.xz .sum-harfbuzz
+ 	$(APPLY) $(SRC)/harfbuzz/0001-meson-Enable-big-objects-support-when-building-for-w.patch
+ 	$(APPLY) $(SRC)/harfbuzz/0001-freetype-Fix-function-signatures-to-match-without-ca.patch
+ 	$(APPLY) $(SRC)/harfbuzz/0002-Disable-Wcast-function-type-strict.patch
++	$(APPLY) $(SRC)/harfbuzz/0003-Use-http-to-download-ragel.patch
+ 	# build ragel as a native tool (which can't be installed)
+ 	sed -i.orig -e 's,install : true,native : true,' $(UNPACK_DIR)/subprojects/packagefiles/ragel/meson.build
+ 	$(MOVE)
+-- 
+2.39.5 (Apple Git-154)
+

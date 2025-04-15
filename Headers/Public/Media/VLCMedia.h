@@ -416,6 +416,30 @@ typedef NS_OPTIONS(int, VLCMediaParsingOptions) {
 - (void)clearStoredCookies;
 
 /**
+ * Adds an additional header to HTTP requests.
+ *
+ * \note must be called before the first call of play() to
+ * take effect. The header storage is only used for http/https.
+ * \warning This method will never succeed on macOS, but requires iOS or tvOS
+ *
+ * \param name name of the header
+ * \param value value of the header
+ *
+ * \return 0 on success, -1 on error.
+ */
+- (int)storeHeaderForName:(NSString *)name
+                    value:(NSString *)value;
+
+/**
+ * Clear the stored headers of a media.
+ *
+ * \note must be called before the first call of play() to
+ * take effect. The header jar is only used for http/https.
+ * \warning This method will never succeed on macOS, but requires iOS or tvOS
+ */
+- (void)clearStoredHeaders;
+
+/**
  * media statistics information
  */
 struct VLCMediaStats
