@@ -1,16 +1,17 @@
-From 909714e5b0851f33a0c5711f2f23c7c0801edc5e Mon Sep 17 00:00:00 2001
+From e4b1ca7ffb41e0b42af3d7fe5d2ee031ab716c6f Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Fri, 28 Mar 2025 03:19:33 +0900
-Subject: [PATCH] Pass HTTP cookies to input
+Subject: [PATCH 1/2] Pass HTTP cookies to input
 
 ---
- include/vlc_http.h     |  1 +
- include/vlc_player.h   | 10 ++++++++++
- lib/media_player.c     |  2 ++
- src/input/access.c     |  5 +++++
- src/misc/httpcookies.c | 20 ++++++++++++++++++++
- src/player/player.c    | 15 +++++++++++++++
- 6 files changed, 53 insertions(+)
+ include/vlc_http.h           |  1 +
+ include/vlc_player.h         | 10 ++++++++++
+ lib/media_player.c           |  2 ++
+ modules/access/http/access.c |  6 +++++-
+ src/input/access.c           |  7 +++++++
+ src/misc/httpcookies.c       | 20 ++++++++++++++++++++
+ src/player/player.c          | 15 +++++++++++++++
+ 7 files changed, 60 insertions(+), 1 deletion(-)
 
 diff --git a/include/vlc_http.h b/include/vlc_http.h
 index 976f6e664a..9e705d5bfb 100644
@@ -58,17 +59,44 @@ index 00c6ad86f7..b63b7cdc99 100644
      }
  
      int ret = vlc_player_Start(player);
+diff --git a/modules/access/http/access.c b/modules/access/http/access.c
+index 4302c0d455..0373c1221d 100644
+--- a/modules/access/http/access.c
++++ b/modules/access/http/access.c
+@@ -32,6 +32,7 @@
+ 
+ #include <vlc_common.h>
+ #include <vlc_access.h>
++#include <vlc_http.h>
+ #include <vlc_keystore.h>
+ #include <vlc_plugin.h>
+ #include <vlc_url.h>
+@@ -164,8 +165,11 @@ static int Open(vlc_object_t *obj)
+     sys->resource = NULL;
+ 
+     void *jar = NULL;
+-    if (var_InheritBool(obj, "http-forward-cookies"))
++    if (var_InheritBool(obj, "http-forward-cookies")) {
+         jar = var_InheritAddress(obj, "http-cookies");
++        if (jar)
++            jar = vlc_http_cookies_copy(jar);
++    }
+ 
+     struct vlc_credential crd;
+     struct vlc_url_t crd_url;
 diff --git a/src/input/access.c b/src/input/access.c
-index fe023d797e..f3f75435a8 100644
+index fe023d797e..6e64aff76a 100644
 --- a/src/input/access.c
 +++ b/src/input/access.c
-@@ -108,6 +108,11 @@ static stream_t *access_New(vlc_object_t *parent, input_thread_t *input,
+@@ -108,6 +108,13 @@ static stream_t *access_New(vlc_object_t *parent, input_thread_t *input,
      access->b_preparsing = preparsing;
      priv = vlc_stream_Private(access);
  
-+    void* cookies = var_GetAddress(input, "http-cookies");
-+    if (cookies != NULL) {
-+        var_SetAddress(access, "http-cookies", cookies);
++    if (input) {
++        void* cookies = var_GetAddress(input, "http-cookies");
++        if (cookies != NULL) {
++            var_SetAddress(access, "http-cookies", cookies);
++        }
 +    }
 +
      if (unlikely(access->psz_url == NULL))
