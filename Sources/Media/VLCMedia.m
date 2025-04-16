@@ -405,20 +405,14 @@ static const struct event_handler_entry {
     if (name == NULL || name == NULL) {
         return -1;
     }
-#if TARGET_OS_IPHONE
     return libvlc_media_header_jar_store(p_md,
                                          [name UTF8String],
                                          [value UTF8String]);
-#else
-    return -1;
-#endif
 }
 
 - (void)clearStoredCookies
 {
-#if TARGET_OS_IPHONE
     libvlc_media_header_jar_clear(p_md);
-#endif
 }
 
 - (int)storeCookie:(NSString *)cookie
@@ -428,21 +422,15 @@ static const struct event_handler_entry {
     if (cookie == NULL || host == NULL || path == NULL) {
         return -1;
     }
-#if TARGET_OS_IPHONE
     return libvlc_media_cookie_jar_store(p_md,
                                          [cookie UTF8String],
                                          [host UTF8String],
                                          [path UTF8String]);
-#else
-    return -1;
-#endif
 }
 
 - (void)clearStoredHeaders
 {
-#if TARGET_OS_IPHONE
     libvlc_media_cookie_jar_clear(p_md);
-#endif
 }
 
 - (VLCMediaFileStatReturnType)fileStatValueForType:(const VLCMediaFileStatType)type value:(uint64_t *)value

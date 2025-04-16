@@ -420,7 +420,6 @@ typedef NS_OPTIONS(int, VLCMediaParsingOptions) {
  *
  * \note must be called before the first call of play() to
  * take effect. The header storage is only used for http/https.
- * \warning This method will never succeed on macOS, but requires iOS or tvOS
  *
  * \param name name of the header
  * \param value value of the header
@@ -435,7 +434,6 @@ typedef NS_OPTIONS(int, VLCMediaParsingOptions) {
  *
  * \note must be called before the first call of play() to
  * take effect. The header jar is only used for http/https.
- * \warning This method will never succeed on macOS, but requires iOS or tvOS
  */
 - (void)clearStoredHeaders;
 
