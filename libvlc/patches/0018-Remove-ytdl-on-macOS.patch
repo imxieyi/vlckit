@@ -1,0 +1,27 @@
+From a7d388310fe889b8205abef8064d8531a81b4066 Mon Sep 17 00:00:00 2001
+From: Yi Xie <imxieyi@users.noreply.github.com>
+Date: Wed, 16 Apr 2025 00:34:38 +0900
+Subject: [PATCH] Remove ytdl on macOS
+
+---
+ extras/package/apple/build.conf | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/extras/package/apple/build.conf b/extras/package/apple/build.conf
+index cbf5f7d3f3..37cd355959 100644
+--- a/extras/package/apple/build.conf
++++ b/extras/package/apple/build.conf
+@@ -253,7 +253,9 @@ export VLC_MODULE_REMOVAL_LIST_BASE=(
+ )
+ 
+ # Additional modules to remove for macOS
+-export VLC_MODULE_REMOVAL_LIST_MACOSX=()
++export VLC_MODULE_REMOVAL_LIST_MACOSX=(
++    ytdl
++)
+ 
+ # Additional modules to remove for iOS
+ export VLC_MODULE_REMOVAL_LIST_IOS=()
+-- 
+2.39.5 (Apple Git-154)
+
