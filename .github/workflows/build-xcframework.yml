@@ -1,0 +1,43 @@
+name: Build VLCKit.xcframework
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    name: Build and Upload VLCKit.xcframework
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Xcode version
+        uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: 16.2
+          
+      - name: Build iOS and Simulator
+        run: |
+          ./compileAndBuildVLCKit.sh -f -a all -v
+          
+      - name: Build macOS
+        run: |
+          ./compileAndBuildVLCKit.sh -x -a all -v
+          
+      - name: Build xcframework
+        run: |
+          cd build
+          xcodebuild -create-xcframework \
+          -archive VLCKit-iphoneos.xcarchive -framework VLCKit.framework \
+          -archive VLCKit-iphonesimulator.xcarchive -framework VLCKit.framework \
+          -archive VLCKit-macosx.xcarchive -framework VLCKit.framework \
+          -output VLCKit.xcframework
+
+      - name: Upload VLCKit.xcframework
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          path: build/VLCKit.xcframework/
