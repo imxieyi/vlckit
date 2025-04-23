@@ -31,6 +31,10 @@ jobs:
         run: |
           ./compileAndBuildVLCKit.sh -f -a all -v
           
+      - name: Build tvOS and Simulator
+        run: |
+          ./compileAndBuildVLCKit.sh -f -t -a all -v
+          
       - name: Build macOS
         run: |
           ./compileAndBuildVLCKit.sh -x -a all -v
@@ -39,13 +43,16 @@ jobs:
         run: |
           cd build
           xcodebuild -create-xcframework \
-          -archive VLCKit-iphoneos.xcarchive -framework VLCKit.framework \
-          -archive VLCKit-iphonesimulator.xcarchive -framework VLCKit.framework \
-          -archive VLCKit-macosx.xcarchive -framework VLCKit.framework \
-          -output VLCKit.xcframework
+            -archive VLCKit-iphoneos.xcarchive -framework VLCKit.framework \
+            -archive VLCKit-iphonesimulator.xcarchive -framework VLCKit.framework \
+            -archive VLCKit-appletvos.xcarchive -framework VLCKit.framework \
+            -archive VLCKit-appletvsimulator.xcarchive -framework VLCKit.framework \
+            -archive VLCKit-macosx.xcarchive -framework VLCKit.framework \
+            -output VLCKit.xcframework
+          zip -r -y VLCKit.xcframework.zip VLCKit.xcframework
 
       - name: Upload VLCKit.xcframework
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: VLCKit.xcframework
-          path: build/VLCKit.xcframework/
+          name: VLCKit.xcframework.zip
+          path: build/VLCKit.xcframework.zip
