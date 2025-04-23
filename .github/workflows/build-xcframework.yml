@@ -7,8 +7,8 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
-    name: Build and Upload VLCKit.xcframework
+  build_ios:
+    name: Build and Upload VLCKit.xcframework for iOS
     runs-on: macos-15
 
     steps:
@@ -25,19 +25,118 @@ jobs:
         uses: actions/cache@v4
         with:
           path: libvlc/vlc
-          key: ${{ runner.os }}-vlc
+          key: ${{ runner.os }}-vlc-ios
           
-      - name: Build iOS and Simulator
+      - name: Build framework
         run: |
           ./compileAndBuildVLCKit.sh -f -a all -v
           
-      - name: Build tvOS and Simulator
+      - name: Archive output
+        run: |
+          cd build
+          zip -r -y VLCKit-ios.zip VLCKit-iphoneos.xcarchive VLCKit-iphonesimulator.xcarchive
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: VLCKit-ios.zip
+          path: build/VLCKit-ios.zip
+
+  build_tvos:
+    name: Build and Upload VLCKit.xcframework for tvOS
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Xcode version
+        uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: 16.2
+
+      - name: Cache VLC folder
+        id: cache-vlc
+        uses: actions/cache@v4
+        with:
+          path: libvlc/vlc
+          key: ${{ runner.os }}-vlc-tvos
+          
+      - name: Build framework
         run: |
           ./compileAndBuildVLCKit.sh -f -t -a all -v
           
-      - name: Build macOS
+      - name: Archive output
+        run: |
+          cd build
+          zip -r -y VLCKit-tvos.zip VLCKit-appletvos.xcarchive VLCKit-appletvsimulator.xcarchive
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: VLCKit-tvos.zip
+          path: build/VLCKit-tvos.zip
+
+  build_macos:
+    name: Build and Upload VLCKit.xcframework for macOS
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Xcode version
+        uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: 16.2
+
+      - name: Cache VLC folder
+        id: cache-vlc
+        uses: actions/cache@v4
+        with:
+          path: libvlc/vlc
+          key: ${{ runner.os }}-vlc-macos
+          
+      - name: Build framework
         run: |
           ./compileAndBuildVLCKit.sh -x -a all -v
+          
+      - name: Archive output
+        run: |
+          cd build
+          zip -r -y VLCKit-macos.zip VLCKit-macosx.xcarchive
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: VLCKit-macos.zip
+          path: build/VLCKit-macos.zip
+
+  build_xcframework:
+    needs: [build_ios, build_tvos, build_macos]
+    name: Build and Upload VLCKit.xcframework
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Xcode version
+        uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: 16.2
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build
+          pattern: VLCKit-*.zip
+          merge-multiple: true
+      
+      - name: Unarchive all artifacts
+        run: |
+          cd build
+          unzip *.zip
           
       - name: Build xcframework
         run: |
