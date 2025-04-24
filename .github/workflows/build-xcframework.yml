@@ -136,7 +136,9 @@ jobs:
       - name: Unarchive all artifacts
         run: |
           cd build
-          unzip *.zip
+          unzip VLCKit-ios.zip
+          unzip VLCKit-tvos.zip
+          unzip VLCKit-macos.zip
           
       - name: Build xcframework
         run: |
