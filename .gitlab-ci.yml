@@ -21,6 +21,10 @@ variables:
 .continous-build-base-main:
     script:
         - ./compileAndBuildVLCKit.sh -${BUILD_PARAM}
+    after_script:
+        - rm -rf build/ || true
+        - rm -rf libvlc/vlc || true
+        - rm -rf *-binary || true
 
 continous-VLCKit-iOS-main:
     extends:
@@ -86,6 +90,10 @@ continous-VLCKit-watchOS-main:
         - ./compileAndBuildVLCKit.sh -${BUILD_PARAM}
         - ./Packaging/create-distributable-package.sh -${PACKAGING_PARAM}
         - mv *.tar.xz ${JOB_NAME}-${VLC_VERSION}-`date +%Y%m%d-%H%M`.tar.xz
+    after_script:
+        - rm -rf build/ || true
+        - rm -rf libvlc/vlc || true
+        - rm -rf *-binary || true
 
 dev-artifacts-VLCKit-iOS-main:
     extends:
@@ -150,6 +158,10 @@ dev-artifacts-VLCKit-watchOS-main:
     script:
         - cd Packaging
         - ./buildAndDeployFrameworks.sh -${BUILD_PARAM}
+    after_script:
+        - rm -rf build/ || true
+        - rm -rf libvlc/vlc || true
+        - rm -rf *-binary || true
 
 MobileVLCKit-main:
     extends:
