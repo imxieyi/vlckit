@@ -1,14 +1,14 @@
-From f5aa3e272b1fff402c6243f8112e2b7781a7309e Mon Sep 17 00:00:00 2001
+From 87f2cc38262783bbf7e475aa4fcf108d615045d2 Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Tue, 1 Apr 2025 03:36:15 +0900
-Subject: [PATCH] Revert 7e65970783 which broke subtitle timing
+Subject: [PATCH 15/18] Revert 7e65970783 which broke subtitle timing
 
 ---
  src/video_output/vout_subpictures.c | 69 ++---------------------------
  1 file changed, 4 insertions(+), 65 deletions(-)
 
 diff --git a/src/video_output/vout_subpictures.c b/src/video_output/vout_subpictures.c
-index 404c04d27f..c6d222b926 100644
+index 4221231028..f07a37ad0a 100644
 --- a/src/video_output/vout_subpictures.c
 +++ b/src/video_output/vout_subpictures.c
 @@ -188,64 +188,13 @@ static void spu_channel_Clean(spu_private_t *sys, struct spu_channel *channel)
@@ -80,7 +80,7 @@ index 404c04d27f..c6d222b926 100644
  }
  
  static struct spu_channel *spu_GetChannel(spu_t *spu, size_t channel_id, size_t *index)
-@@ -2163,16 +2112,6 @@ void spu_PutSubpicture(spu_t *spu, subpicture_t *subpic)
+@@ -2157,16 +2106,6 @@ void spu_PutSubpicture(spu_t *spu, subpicture_t *subpic)
          }
  
          vlc_clock_Unlock(channel->clock);

@@ -1,7 +1,7 @@
-From be3fb63880e0a1fb3270653cb5f75f8113914335 Mon Sep 17 00:00:00 2001
+From 414195f480cedf96943721c9f0235662cf6d163d Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Tue, 15 Apr 2025 22:23:42 +0900
-Subject: [PATCH] Support additional HTTP headers for HTTP playback
+Subject: [PATCH 17/18] Support additional HTTP headers for HTTP playback
 
 ---
  include/vlc/libvlc_media.h                    |  30 ++++
@@ -115,7 +115,7 @@ index 9e705d5bfb..04dc0e189f 100644
 +
  #endif /* VLC_HTTP_H */
 diff --git a/include/vlc_player.h b/include/vlc_player.h
-index 62440cc8b6..c6bd050013 100644
+index 6c50053c74..86404d5642 100644
 --- a/include/vlc_player.h
 +++ b/include/vlc_player.h
 @@ -437,6 +437,16 @@ vlc_player_Stop(vlc_player_t *player);
@@ -149,10 +149,10 @@ index fdbc22b8e9..3cb7ce3d66 100644
  libvlc_release
  libvlc_renderer_item_name
 diff --git a/lib/media.c b/lib/media.c
-index 870d53b6d1..bd4bfba219 100644
+index 79fbb98430..ee78527299 100644
 --- a/lib/media.c
 +++ b/lib/media.c
-@@ -377,6 +377,7 @@ libvlc_media_t * libvlc_media_new_from_input_item(input_item_t *p_input_item )
+@@ -378,6 +378,7 @@ libvlc_media_t * libvlc_media_new_from_input_item(input_item_t *p_input_item )
  
      libvlc_event_manager_init( &p_md->event_manager, p_md );
      p_md->p_cookie_jar      = NULL;
@@ -160,7 +160,7 @@ index 870d53b6d1..bd4bfba219 100644
  
      input_item_Hold( p_md->p_input_item );
  
-@@ -509,6 +510,9 @@ void libvlc_media_release( libvlc_media_t *p_md )
+@@ -510,6 +511,9 @@ void libvlc_media_release( libvlc_media_t *p_md )
      if( p_md->p_cookie_jar )
          vlc_http_cookies_destroy( p_md->p_cookie_jar );
  
@@ -170,7 +170,7 @@ index 870d53b6d1..bd4bfba219 100644
      libvlc_event_manager_destroy( &p_md->event_manager );
      free( p_md );
  }
-@@ -1225,3 +1229,23 @@ libvlc_media_cookie_jar_clear( libvlc_media_t *p_md )
+@@ -1226,3 +1230,23 @@ libvlc_media_cookie_jar_clear( libvlc_media_t *p_md )
      if( p_md->p_cookie_jar )
          vlc_http_cookies_clear( p_md->p_cookie_jar );
  }
@@ -195,7 +195,7 @@ index 870d53b6d1..bd4bfba219 100644
 +        vlc_http_headers_clear( p_md->p_header_jar );
 +}
 diff --git a/lib/media_internal.h b/lib/media_internal.h
-index 5d7ffc7556..b47a38e58a 100644
+index e8ff103a40..8d2bf6f0ec 100644
 --- a/lib/media_internal.h
 +++ b/lib/media_internal.h
 @@ -52,6 +52,7 @@ struct libvlc_media_t
@@ -207,7 +207,7 @@ index 5d7ffc7556..b47a38e58a 100644
  
  /* Media Descriptor */
 diff --git a/lib/media_player.c b/lib/media_player.c
-index b63b7cdc99..05360ddcff 100644
+index 29aceef81f..9272b896cf 100644
 --- a/lib/media_player.c
 +++ b/lib/media_player.c
 @@ -642,6 +642,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
@@ -372,10 +372,10 @@ index f996387eec..d7b2e2fd51 100644
  char *vlc_http_msg_get_basic_realm(const struct vlc_http_msg *);
  
 diff --git a/modules/access/http/outfile.c b/modules/access/http/outfile.c
-index 1d93880409..421a4b7fbb 100644
+index d31c825a2c..5444e00eb3 100644
 --- a/modules/access/http/outfile.c
 +++ b/modules/access/http/outfile.c
-@@ -76,6 +76,7 @@ struct vlc_http_outfile *vlc_http_outfile_create(struct vlc_http_mgr *mgr,
+@@ -87,6 +87,7 @@ struct vlc_http_outfile *vlc_http_outfile_create(struct vlc_http_mgr *mgr,
          vlc_http_msg_add_agent(req, ua);
  
      vlc_http_msg_add_cookies(req, vlc_http_mgr_get_jar(mgr));
@@ -448,22 +448,23 @@ index 20c791dec0..5a1e5ec6f6 100644
      }
  }
 diff --git a/modules/demux/adaptive/http/HTTPConnection.cpp b/modules/demux/adaptive/http/HTTPConnection.cpp
-index ffb31e998e..d50d84526d 100644
+index b3694553d3..3c67b38d94 100644
 --- a/modules/demux/adaptive/http/HTTPConnection.cpp
 +++ b/modules/demux/adaptive/http/HTTPConnection.cpp
-@@ -88,9 +88,9 @@ class adaptive::http::LibVLCHTTPSource : public adaptive::AbstractSource
-      friend class LibVLCHTTPConnection;
- 
+@@ -87,10 +87,10 @@ const ConnectionParams & AbstractConnection::getRedirection() const
+ class adaptive::http::LibVLCHTTPSource : public adaptive::BlockStreamInterface
+ {
       public:
--        LibVLCHTTPSource(vlc_object_t *p_object, struct vlc_http_cookie_jar_t *jar)
-+        LibVLCHTTPSource(vlc_object_t *p_object, struct vlc_http_cookie_jar_t *jar, struct vlc_http_header_jar_t *header_jar)
+-        LibVLCHTTPSource(vlc_object_t *p_object_, struct vlc_http_cookie_jar_t *jar)
++        LibVLCHTTPSource(vlc_object_t *p_object_, struct vlc_http_cookie_jar_t *jar, struct vlc_http_header_jar_t *header_jar)
          {
+             p_object = p_object_;
 -            http_mgr = vlc_http_mgr_create(p_object, jar);
 +            http_mgr = vlc_http_mgr_create(p_object, jar, header_jar);
              http_res = nullptr;
              totalRead = 0;
          }
-@@ -242,7 +242,7 @@ const struct vlc_http_resource_cbs LibVLCHTTPSource::callbacks =
+@@ -350,7 +350,7 @@ const struct vlc_http_resource_cbs LibVLCHTTPSource::callbacks =
  LibVLCHTTPConnection::LibVLCHTTPConnection(vlc_object_t *p_object_, AuthStorage *auth)
      : AbstractConnection( p_object_ )
  {
@@ -473,10 +474,10 @@ index ffb31e998e..d50d84526d 100644
      stream = nullptr;
      char *psz_useragent = var_InheritString(p_object_, "http-user-agent");
 diff --git a/src/Makefile.am b/src/Makefile.am
-index b1e877e077..b5894f4b8f 100644
+index c2c0f541aa..b2211fc77f 100644
 --- a/src/Makefile.am
 +++ b/src/Makefile.am
-@@ -426,6 +426,7 @@ libvlccore_la_SOURCES = \
+@@ -425,6 +425,7 @@ libvlccore_la_SOURCES = \
  	misc/filter.c \
  	misc/filter_chain.c \
  	misc/httpcookies.c \
@@ -500,10 +501,10 @@ index 6e64aff76a..2b2c754f00 100644
  
      if (unlikely(access->psz_url == NULL))
 diff --git a/src/meson.build b/src/meson.build
-index e9901e9a7c..fd474a882a 100644
+index 3ddf2b89ab..e6eb78e936 100644
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -271,6 +271,7 @@ libvlccore_sources_base = files(
+@@ -279,6 +279,7 @@ libvlccore_sources_base = files(
      'misc/filter.c',
      'misc/filter_chain.c',
      'misc/httpcookies.c',

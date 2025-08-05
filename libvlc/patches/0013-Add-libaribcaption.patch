@@ -1,17 +1,17 @@
-From 8ccde114ad0d5c8607b190adfb77b5d2a6b2af03 Mon Sep 17 00:00:00 2001
+From 75a0c18fff49e85dfc5fa9a6900b86790eabf268 Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Tue, 25 Mar 2025 23:36:11 +0900
-Subject: [PATCH] Add libaribcaption
+Subject: [PATCH 13/18] Add libaribcaption
 
 ---
  extras/package/apple/build.conf | 1 +
  1 file changed, 1 insertion(+)
 
 diff --git a/extras/package/apple/build.conf b/extras/package/apple/build.conf
-index 767e6fe625..00a50ae170 100644
+index 86af8564ad..2ecd302bea 100644
 --- a/extras/package/apple/build.conf
 +++ b/extras/package/apple/build.conf
-@@ -66,6 +66,7 @@ export VLC_CONTRIB_OPTIONS_BASE=(
+@@ -65,6 +65,7 @@ export VLC_CONTRIB_OPTIONS_BASE=(
      --disable-luac
      --disable-aribb24
      --disable-aribb25
