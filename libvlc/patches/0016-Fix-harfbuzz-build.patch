@@ -1,20 +1,20 @@
-From a5f13e60e104d311c2efa95c87025a88d8001888 Mon Sep 17 00:00:00 2001
+From 9f4c6b459f3ea1b363eedb7a48459c0ed8b28c3f Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Tue, 15 Apr 2025 23:40:05 +0900
-Subject: [PATCH 16/18] Fix harfbuzz build
+Subject: [PATCH] Fix harfbuzz build
 
 ---
- .../0003-Use-http-to-download-ragel.patch     | 24 +++++++++++++++++++
+ .../0003-Use-http-to-download-ragel.patch     | 23 +++++++++++++++++++
  contrib/src/harfbuzz/rules.mak                |  1 +
- 2 files changed, 25 insertions(+)
+ 2 files changed, 24 insertions(+)
  create mode 100644 contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch
 
 diff --git a/contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch b/contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch
 new file mode 100644
-index 0000000000..b2d7d5166b
+index 0000000000..263775cefb
 --- /dev/null
 +++ b/contrib/src/harfbuzz/0003-Use-http-to-download-ragel.patch
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,23 @@
 +From be8ad1265b9556124a7642521091fbeee3f09ae5 Mon Sep 17 00:00:00 2001
 +From: Yi Xie <imxieyi@users.noreply.github.com>
 +Date: Tue, 15 Apr 2025 23:38:53 +0900
@@ -38,19 +38,18 @@ index 0000000000..b2d7d5166b
 + patch_directory = ragel
 +-- 
 +2.39.5 (Apple Git-154)
-+
 diff --git a/contrib/src/harfbuzz/rules.mak b/contrib/src/harfbuzz/rules.mak
-index c630c772c1..a640769161 100644
+index 3528222caf..e5106bf922 100644
 --- a/contrib/src/harfbuzz/rules.mak
 +++ b/contrib/src/harfbuzz/rules.mak
-@@ -17,6 +17,7 @@ harfbuzz: harfbuzz-$(HARFBUZZ_VERSION).tar.xz .sum-harfbuzz
- 	$(APPLY) $(SRC)/harfbuzz/0001-meson-Enable-big-objects-support-when-building-for-w.patch
- 	$(APPLY) $(SRC)/harfbuzz/0001-freetype-Fix-function-signatures-to-match-without-ca.patch
- 	$(APPLY) $(SRC)/harfbuzz/0002-Disable-Wcast-function-type-strict.patch
+@@ -14,6 +14,7 @@ $(TARBALLS)/harfbuzz-$(HARFBUZZ_VERSION).tar.xz:
+ 
+ harfbuzz: harfbuzz-$(HARFBUZZ_VERSION).tar.xz .sum-harfbuzz
+ 	$(UNPACK)
 +	$(APPLY) $(SRC)/harfbuzz/0003-Use-http-to-download-ragel.patch
- 	# build ragel as a native tool (which can't be installed)
- 	sed -i.orig -e 's,install : true,native : true,' $(UNPACK_DIR)/subprojects/packagefiles/ragel/meson.build
  	$(MOVE)
+ 
+ DEPS_harfbuzz = freetype2 $(DEPS_freetype2)
 -- 
-2.39.5 (Apple Git-154)
+2.50.1 (Apple Git-155)
 
