@@ -352,7 +352,6 @@ typedef NS_OPTIONS(unsigned, VLCMediaOption) {
  *
  * \note must be called before the first call of play() to
  * take effect. The cookie storage is only used for http/https.
- * \warning This method will never succeed on macOS, but requires iOS or tvOS
  *
  * \param cookie header field value of Set-Cookie: "name=value<;attributes>"
  * \param host host to which the cookie will be sent
@@ -369,7 +368,6 @@ typedef NS_OPTIONS(unsigned, VLCMediaOption) {
  *
  * \note must be called before the first call of play() to
  * take effect. The cookie jar is only used for http/https.
- * \warning This method will never succeed on macOS, but requires iOS or tvOS
  */
 - (void)clearStoredCookies;
 

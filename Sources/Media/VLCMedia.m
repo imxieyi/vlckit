@@ -365,22 +365,6 @@ void close_cb(void *opaque) {
     libvlc_media_slaves_clear(p_md);
 }
 
-- (int)storeHeaderForName:(NSString *)name
-                    value:(NSString *)value
-{
-    if (name == NULL || name == NULL) {
-        return -1;
-    }
-    return libvlc_media_header_jar_store(p_md,
-                                         [name UTF8String],
-                                         [value UTF8String]);
-}
-
-- (void)clearStoredCookies
-{
-    libvlc_media_header_jar_clear(p_md);
-}
-
 - (int)storeCookie:(NSString *)cookie
            forHost:(NSString *)host
               path:(NSString *)path
@@ -394,9 +378,25 @@ void close_cb(void *opaque) {
                                          [path UTF8String]);
 }
 
-- (void)clearStoredHeaders
+- (void)clearStoredCookies
 {
     libvlc_media_cookie_jar_clear(p_md);
+}
+
+- (int)storeHeaderForName:(NSString *)name
+                    value:(NSString *)value
+{
+    if (name == NULL || value == NULL) {
+        return -1;
+    }
+    return libvlc_media_header_jar_store(p_md,
+                                         [name UTF8String],
+                                         [value UTF8String]);
+}
+
+- (void)clearStoredHeaders
+{
+    libvlc_media_header_jar_clear(p_md);
 }
 
 - (VLCMediaFileStatReturnType)fileStatValueForType:(const VLCMediaFileStatType)type value:(uint64_t *)value
