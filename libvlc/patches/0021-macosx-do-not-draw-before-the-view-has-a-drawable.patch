@@ -1,0 +1,38 @@
+From ccaecf802dc67ae2c59e2fda963c477f84b34732 Mon Sep 17 00:00:00 2001
+From: Yi Xie <imxieyi@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 01:51:30 +0900
+Subject: [PATCH 21/21] macosx: do not draw before the view has a drawable
+
+Open() adds the OpenGL view to its container asynchronously on the main
+thread, so when the main thread is busy, the vout thread can display the
+first pictures before the context has a drawable. Clearing or drawing to
+the undefined default framebuffer then raises
+GL_INVALID_FRAMEBUFFER_OPERATION, which the next
+vout_display_opengl_Prepare() asserts on in debug builds.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ modules/video_output/macosx.m | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/modules/video_output/macosx.m b/modules/video_output/macosx.m
+index c9d12e8914..fa646bf205 100644
+--- a/modules/video_output/macosx.m
++++ b/modules/video_output/macosx.m
+@@ -533,6 +533,13 @@ - (void)unlockgl
+  */
+ - (void)render
+ {
++    /* The context has no drawable until the view is in a window, which only
++     * happens asynchronously on the main thread after Open(), while the vout
++     * thread may already display pictures. Drawing to the undefined default
++     * framebuffer would raise GL_INVALID_FRAMEBUFFER_OPERATION. */
++    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
++        return;
++
+     if (!vd) {
+         glClear (GL_COLOR_BUFFER_BIT);
+         return;
+-- 
+2.54.0 (Apple Git-157)
+

@@ -1,0 +1,313 @@
+From a7ae7bcf08225d3eed31f93faeee93f2b17d3b51 Mon Sep 17 00:00:00 2001
+From: Yi Xie <imxieyi@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 01:25:38 +0900
+Subject: [PATCH 20/21] freetype: only use CoreText fallback fonts that
+ FreeType can render
+
+On iOS 27, CoreText picks PingFang for Chinese characters and
+for most kanji, but PingFang only has 'hvgl' outlines, which FreeType
+can not read, so those characters were not rendered. When the font
+CoreText suggests has no outlines FreeType supports, look for another
+font with the codepoint in the cascade list, and then among all fonts,
+which includes the fonts activated by the application.
+
+Keep the fallbacks found in a list per family, like on Windows, instead
+of returning the family from the master list, whose other families
+SearchFallbacks() walked through, which made the result depend on the
+order the families were loaded. Also remember the codepoints without
+any font, since searching all fonts for each of them is slow.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../text_renderer/freetype/fonts/backends.h   |   6 +
+ modules/text_renderer/freetype/fonts/darwin.c | 201 +++++++++++++++---
+ .../text_renderer/freetype/platform_fonts.c   |   3 +
+ 3 files changed, 182 insertions(+), 28 deletions(-)
+
+diff --git a/modules/text_renderer/freetype/fonts/backends.h b/modules/text_renderer/freetype/fonts/backends.h
+index 5f73645971..6fc96c398e 100644
+--- a/modules/text_renderer/freetype/fonts/backends.h
++++ b/modules/text_renderer/freetype/fonts/backends.h
+@@ -66,6 +66,12 @@ struct vlc_font_select_t
+ #if defined( _WIN32 )
+     void *p_dw_sys;
+     vlc_dictionary_t  fontlinking_map;
++#elif defined( __APPLE__ )
++    /**
++     * Codepoints that no font FreeType can render provides, so that CoreText
++     * is not searched again for each of them
++     */
++    struct VLC_VECTOR(uni_char_t) missing_codepoints;
+ #endif
+ };
+ 
+diff --git a/modules/text_renderer/freetype/fonts/darwin.c b/modules/text_renderer/freetype/fonts/darwin.c
+index 30e1ae8c16..49a5721059 100644
+--- a/modules/text_renderer/freetype/fonts/darwin.c
++++ b/modules/text_renderer/freetype/fonts/darwin.c
+@@ -317,19 +317,135 @@ end:
+     return i_ret;
+ }
+ 
++/* FreeType can not render every font CoreText can, such as PingFang on iOS 27,
++ * which only has 'hvgl' outlines */
++static bool IsFontRenderable(CTFontRef font)
++{
++    CFArrayRef tables = CTFontCopyAvailableTables(font, kCTFontTableOptionNoOptions);
++    if (tables == NULL)
++        return false;
++
++    bool renderable = false;
++    for (CFIndex i = 0; i < CFArrayGetCount(tables) && !renderable; i++) {
++        /* The array holds the tags themselves, not CFNumbers */
++        const void *value = CFArrayGetValueAtIndex(tables, i);
++        CTFontTableTag tag = (CTFontTableTag)(uintptr_t)value;
++        switch (tag) {
++            case kCTFontTableGlyf:
++            case kCTFontTableCFF:
++            case kCTFontTableCFF2:
++            case kCTFontTableSbix:
++            case kCTFontTableCBDT:
++                renderable = true;
++                break;
++        }
++    }
++    CFRelease(tables);
++    return renderable;
++}
++
++static bool FontHasCodepoint(CTFontRef font, uni_char_t codepoint)
++{
++    UniChar characters[2];
++    CGGlyph glyphs[2];
++    CFIndex count = CFStringGetSurrogatePairForLongCharacter(codepoint, characters) ? 2 : 1;
++    return CTFontGetGlyphsForCharacters(font, characters, glyphs, count);
++}
++
++/* Returns the first font of the descriptors that has the codepoint and that FreeType can render */
++static CTFontRef CreateRenderableFontFromDescriptors(CFArrayRef descriptors, uni_char_t codepoint)
++{
++    for (CFIndex i = 0; i < CFArrayGetCount(descriptors); i++) {
++        CTFontDescriptorRef descriptor = CFArrayGetValueAtIndex(descriptors, i);
++        CTFontRef font = CTFontCreateWithFontDescriptor(descriptor, 0., NULL);
++        if (font == NULL)
++            continue;
++        if (FontHasCodepoint(font, codepoint) && IsFontRenderable(font))
++            return font;
++        CFRelease(font);
++    }
++    return NULL;
++}
++
++static CTFontRef CreateRenderableFallbackFont(CTFontRef font, CFStringRef codepointString,
++                                              uni_char_t codepoint)
++{
++    CTFontRef fallbackFont = CTFontCreateForString(font, codepointString,
++                                                   CFRangeMake(0, CFStringGetLength(codepointString)));
++    if (fallbackFont == NULL || IsFontRenderable(fallbackFont))
++        return fallbackFont;
++    CFRelease(fallbackFont);
++    fallbackFont = NULL;
++
++    /* Try the other fonts CoreText uses for the languages of the user */
++    CFArrayRef cascadeList = CTFontCopyDefaultCascadeListForLanguages(font, NULL);
++    if (cascadeList != NULL) {
++        fallbackFont = CreateRenderableFontFromDescriptors(cascadeList, codepoint);
++        CFRelease(cascadeList);
++        if (fallbackFont != NULL)
++            return fallbackFont;
++    }
++
++    /* Then any font with the codepoint, such as the fonts activated by the application */
++    CFCharacterSetRef characterSet = CFCharacterSetCreateWithCharactersInString(kCFAllocatorDefault,
++                                                                                codepointString);
++    if (characterSet == NULL)
++        return NULL;
++    CFDictionaryRef attributes = CFDictionaryCreate(kCFAllocatorDefault,
++                                                    (const void **)&kCTFontCharacterSetAttribute,
++                                                    (const void **)&characterSet, 1,
++                                                    &kCFTypeDictionaryKeyCallBacks,
++                                                    &kCFTypeDictionaryValueCallBacks);
++    CTFontDescriptorRef descriptor = CTFontDescriptorCreateWithAttributes(attributes);
++    CFArrayRef matches = CTFontDescriptorCreateMatchingFontDescriptors(descriptor, NULL);
++    if (matches != NULL) {
++        CFMutableArrayRef sortedMatches = CFArrayCreateMutableCopy(kCFAllocatorDefault, 0, matches);
++        CFArraySortValues(sortedMatches, CFRangeMake(0, CFArrayGetCount(sortedMatches)),
++                          (CFComparatorFunction)SortCTFontMatchResults, NULL);
++        fallbackFont = CreateRenderableFontFromDescriptors(sortedMatches, codepoint);
++        CFRelease(sortedMatches);
++        CFRelease(matches);
++    }
++    CFRelease(descriptor);
++    CFRelease(attributes);
++    CFRelease(characterSet);
++    return fallbackFont;
++}
++
++static bool IsMissingCodepoint(vlc_font_select_t *fs, uni_char_t codepoint)
++{
++    uni_char_t missing;
++    vlc_vector_foreach(missing, &fs->missing_codepoints) {
++        if (missing == codepoint)
++            return true;
++    }
++    return false;
++}
++
+ int CoreText_GetFallbacks(vlc_font_select_t *fs, const char *psz_lcname,
+                           uni_char_t codepoint, vlc_family_t **pp_result)
+ {
+-    int i_ret = VLC_EGENERIC;
+     if (unlikely(psz_lcname == NULL)) {
+         return VLC_EGENERIC;
+     }
+ 
+     psz_lcname = CoreText_TranslateGenericFamily(psz_lcname);
+ 
+-    vlc_family_t *p_family = NULL;
++    /* Look into the fallbacks found for previous codepoints first, since
++     * finding a font FreeType can render may take a while */
++    vlc_family_t *p_fallbacks = vlc_dictionary_value_for_key(&fs->fallback_map, psz_lcname);
++    vlc_family_t *p_family = p_fallbacks ? SearchFallbacks(fs, p_fallbacks, codepoint) : NULL;
++    if (p_family != NULL || IsMissingCodepoint(fs, codepoint)) {
++        *pp_result = p_family;
++        return VLC_SUCCESS;
++    }
++
++    int i_ret = VLC_EGENERIC;
++    CTFontRef fallbackFont = NULL;
++    CFStringRef fallbackFontFamilyName = NULL;
+     CFStringRef postScriptFallbackFontname = NULL;
+     CTFontDescriptorRef fallbackFontDescriptor = NULL;
++    char *psz_fallbackFamilyName = NULL;
+     char *psz_lc_fallback = NULL;
+     char *psz_fontPath = NULL;
+ 
+@@ -343,11 +459,22 @@ int CoreText_GetFallbacks(vlc_font_select_t *fs, const char *psz_lcname,
+                                                           sizeof(littleEndianCodePoint),
+                                                           kCFStringEncodingUTF32LE,
+                                                           false);
+-    CTFontRef fallbackFont = CTFontCreateForString(font, codepointString, CFRangeMake(0,1));
+-    CFStringRef fallbackFontFamilyName = CTFontCopyFamilyName(fallbackFont);
++    if (codepointString == NULL) {
++        goto done;
++    }
+ 
+-    /* create a new family object */
+-    char *psz_fallbackFamilyName = FromCFString(fallbackFontFamilyName, kCFStringEncodingUTF8);
++    fallbackFont = CreateRenderableFallbackFont(font, codepointString, codepoint);
++    if (fallbackFont == NULL) {
++#ifndef NDEBUG
++        msg_Dbg(fs->p_obj, "No font can render codepoint %x", codepoint);
++#endif
++        vlc_vector_push(&fs->missing_codepoints, codepoint);
++        i_ret = VLC_SUCCESS;
++        goto done;
++    }
++    fallbackFontFamilyName = CTFontCopyFamilyName(fallbackFont);
++
++    psz_fallbackFamilyName = FromCFString(fallbackFontFamilyName, kCFStringEncodingUTF8);
+     if (psz_fallbackFamilyName == NULL) {
+         msg_Warn(fs->p_obj, "Failed to convert font family name CFString to C string");
+         goto done;
+@@ -358,43 +485,61 @@ int CoreText_GetFallbacks(vlc_font_select_t *fs, const char *psz_lcname,
+ 
+     psz_lc_fallback = LowercaseDup(psz_fallbackFamilyName);
+ 
+-    p_family = vlc_dictionary_value_for_key(&fs->family_map, psz_lc_fallback);
+-    if (p_family) {
+-        i_ret = VLC_SUCCESS;
+-        goto done;
++    /* The family is already a fallback, but its font does not have the codepoint */
++    for (vlc_family_t *p = p_fallbacks; p; p = p->p_next) {
++        if (!strcmp(p->psz_name, psz_lc_fallback)) {
++            vlc_vector_push(&fs->missing_codepoints, codepoint);
++            i_ret = VLC_SUCCESS;
++            goto done;
++        }
+     }
+ 
+-    p_family = NewFamily(fs, psz_lc_fallback, &fs->p_families, &fs->family_map, psz_lc_fallback);
+-    if (unlikely(!p_family)) {
+-        goto done;
++    vlc_family_t *p_master = vlc_dictionary_value_for_key(&fs->family_map, psz_lc_fallback);
++    if (p_master == NULL) {
++        p_master = NewFamily(fs, psz_lc_fallback, &fs->p_families, &fs->family_map, psz_lc_fallback);
++        if (unlikely(p_master == NULL)) {
++            goto done;
++        }
+     }
+ 
+-    postScriptFallbackFontname = CTFontCopyPostScriptName(fallbackFont);
+-    fallbackFontDescriptor = CTFontDescriptorCreateWithNameAndSize(postScriptFallbackFontname, 0.);
+-    psz_fontPath = getPathForFontDescription(fallbackFontDescriptor);
++    if (p_master->p_fonts == NULL) {
++        postScriptFallbackFontname = CTFontCopyPostScriptName(fallbackFont);
++        fallbackFontDescriptor = CTFontDescriptorCreateWithNameAndSize(postScriptFallbackFontname, 0.);
++        psz_fontPath = getPathForFontDescription(fallbackFontDescriptor);
+ 
+-    /* check if the path is empty, which can happen in rare circumstances */
+-    if (psz_fontPath == NULL || *psz_fontPath == '\0') {
+-        i_ret = VLC_SUCCESS;
+-        goto done;
++        /* check if the path is empty, which can happen in rare circumstances */
++        if (psz_fontPath == NULL || *psz_fontPath == '\0') {
++            i_ret = VLC_SUCCESS;
++            goto done;
++        }
++
++        /* get the index of the font family in the font file */
++        CFIndex fontIndex = getFontIndexInFontFile(psz_fontPath, psz_fallbackFamilyName);
++        if (fontIndex == kCFNotFound) {
++            goto done;
++        }
++
++        addNewFontToFamily(fs, fallbackFontDescriptor, strdup(psz_fontPath), p_master, fontIndex);
+     }
+ 
+-    /* get the index of the font family in the font file */
+-    CFIndex fontIndex = getFontIndexInFontFile(psz_fontPath, psz_fallbackFamilyName);
+-    if (fontIndex == kCFNotFound) {
++    /* The fallback list only references the fonts of the family in the master list */
++    p_family = NewFamily(fs, psz_lc_fallback, NULL, &fs->fallback_map, psz_lcname);
++    if (unlikely(p_family == NULL)) {
+         goto done;
+     }
+-
+-    addNewFontToFamily(fs, fallbackFontDescriptor, strdup(psz_fontPath), p_family, fontIndex);
++    p_family->p_fonts = p_master->p_fonts;
+ 
+     i_ret = VLC_SUCCESS;
+ 
+ done:
+     CFRelease(familyName);
+     CFRelease(font);
+-    CFRelease(codepointString);
+-    CFRelease(fallbackFont);
+-    CFRelease(fallbackFontFamilyName);
++    if (codepointString != NULL)
++        CFRelease(codepointString);
++    if (fallbackFont != NULL)
++        CFRelease(fallbackFont);
++    if (fallbackFontFamilyName != NULL)
++        CFRelease(fallbackFontFamilyName);
+     free(psz_fallbackFamilyName);
+     free(psz_lc_fallback);
+     free(psz_fontPath);
+diff --git a/modules/text_renderer/freetype/platform_fonts.c b/modules/text_renderer/freetype/platform_fonts.c
+index 72c8d78db8..2d4f64c9db 100644
+--- a/modules/text_renderer/freetype/platform_fonts.c
++++ b/modules/text_renderer/freetype/platform_fonts.c
+@@ -953,6 +953,9 @@ void FontSelectDelete( vlc_font_select_t *fs )
+         ReleaseDWrite( fs );
+     vlc_dictionary_clear( &fs->fontlinking_map, FreeFamilies, fs );
+ #endif
++#ifdef __APPLE__
++    vlc_vector_destroy( &fs->missing_codepoints );
++#endif
+ 
+     if( fs->families_lookup_lru )
+         vlc_lru_Release( fs->families_lookup_lru );
+-- 
+2.54.0 (Apple Git-157)
+
