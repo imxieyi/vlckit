@@ -9,23 +9,33 @@ on:
 jobs:
   build_ios:
     name: Build and Upload VLCKit.xcframework for iOS
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         
       - name: Setup Xcode version
-        uses: maxim-lobanov/setup-xcode@v1.6.0
+        uses: maxim-lobanov/setup-xcode@v1.7.0
         with:
-          xcode-version: 16.2
+          xcode-version: '26.6'
+
+      - name: Install GNU make
+        # /usr/bin/make is GNU Make 3.81, which breaks with the jobserver-aware
+        # ninja that VLC builds ("read jobs pipe: Resource temporarily
+        # unavailable"). compileAndBuildVLCKit.sh puts $VLC_PATH ahead of /usr/bin.
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew install make
+          echo "VLC_PATH=$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_ENV"
 
       - name: Cache VLC folder
         id: cache-vlc
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: libvlc/vlc
-          key: ${{ runner.os }}-vlc-ios
+          key: ${{ runner.os }}-vlc-ios-${{ hashFiles('compileAndBuildVLCKit.sh', 'libvlc/patches/*', '.github/workflows/build-xcframework.yml') }}
           
       - name: Build framework
         run: |
@@ -37,30 +47,40 @@ jobs:
           zip -r -y VLCKit-ios.zip VLCKit-iphoneos.xcarchive VLCKit-iphonesimulator.xcarchive
 
       - name: Upload archive
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6
         with:
           name: VLCKit-ios.zip
           path: build/VLCKit-ios.zip
 
   build_tvos:
     name: Build and Upload VLCKit.xcframework for tvOS
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         
       - name: Setup Xcode version
-        uses: maxim-lobanov/setup-xcode@v1.6.0
+        uses: maxim-lobanov/setup-xcode@v1.7.0
         with:
-          xcode-version: 16.2
+          xcode-version: '26.6'
+
+      - name: Install GNU make
+        # /usr/bin/make is GNU Make 3.81, which breaks with the jobserver-aware
+        # ninja that VLC builds ("read jobs pipe: Resource temporarily
+        # unavailable"). compileAndBuildVLCKit.sh puts $VLC_PATH ahead of /usr/bin.
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew install make
+          echo "VLC_PATH=$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_ENV"
 
       - name: Cache VLC folder
         id: cache-vlc
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: libvlc/vlc
-          key: ${{ runner.os }}-vlc-tvos
+          key: ${{ runner.os }}-vlc-tvos-${{ hashFiles('compileAndBuildVLCKit.sh', 'libvlc/patches/*', '.github/workflows/build-xcframework.yml') }}
           
       - name: Build framework
         run: |
@@ -72,30 +92,40 @@ jobs:
           zip -r -y VLCKit-tvos.zip VLCKit-appletvos.xcarchive VLCKit-appletvsimulator.xcarchive
 
       - name: Upload archive
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6
         with:
           name: VLCKit-tvos.zip
           path: build/VLCKit-tvos.zip
 
   build_macos:
     name: Build and Upload VLCKit.xcframework for macOS
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         
       - name: Setup Xcode version
-        uses: maxim-lobanov/setup-xcode@v1.6.0
+        uses: maxim-lobanov/setup-xcode@v1.7.0
         with:
-          xcode-version: 16.2
+          xcode-version: '26.6'
+
+      - name: Install GNU make
+        # /usr/bin/make is GNU Make 3.81, which breaks with the jobserver-aware
+        # ninja that VLC builds ("read jobs pipe: Resource temporarily
+        # unavailable"). compileAndBuildVLCKit.sh puts $VLC_PATH ahead of /usr/bin.
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew install make
+          echo "VLC_PATH=$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_ENV"
 
       - name: Cache VLC folder
         id: cache-vlc
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: libvlc/vlc
-          key: ${{ runner.os }}-vlc-macos
+          key: ${{ runner.os }}-vlc-macos-${{ hashFiles('compileAndBuildVLCKit.sh', 'libvlc/patches/*', '.github/workflows/build-xcframework.yml') }}
           
       - name: Build framework
         run: |
@@ -107,7 +137,7 @@ jobs:
           zip -r -y VLCKit-macos.zip VLCKit-macosx.xcarchive
 
       - name: Upload archive
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6
         with:
           name: VLCKit-macos.zip
           path: build/VLCKit-macos.zip
@@ -115,19 +145,19 @@ jobs:
   build_xcframework:
     needs: [build_ios, build_tvos, build_macos]
     name: Build and Upload VLCKit.xcframework
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         
       - name: Setup Xcode version
-        uses: maxim-lobanov/setup-xcode@v1.6.0
+        uses: maxim-lobanov/setup-xcode@v1.7.0
         with:
-          xcode-version: 16.2
+          xcode-version: '26.6'
       
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: build
           pattern: VLCKit-*.zip
@@ -153,7 +183,7 @@ jobs:
           zip -r -y VLCKit.xcframework.zip VLCKit.xcframework
 
       - name: Upload VLCKit.xcframework
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6
         with:
           name: VLCKit.xcframework.zip
           path: build/VLCKit.xcframework.zip

@@ -1,4 +1,4 @@
-From 9f4c6b459f3ea1b363eedb7a48459c0ed8b28c3f Mon Sep 17 00:00:00 2001
+From b42e46b89b1f22c690f34df45d134d3783b4c957 Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Tue, 15 Apr 2025 23:40:05 +0900
 Subject: [PATCH] Fix harfbuzz build
@@ -39,17 +39,17 @@ index 0000000000..263775cefb
 +-- 
 +2.39.5 (Apple Git-154)
 diff --git a/contrib/src/harfbuzz/rules.mak b/contrib/src/harfbuzz/rules.mak
-index 3528222caf..e5106bf922 100644
+index 657ea4511d..6575e90e92 100644
 --- a/contrib/src/harfbuzz/rules.mak
 +++ b/contrib/src/harfbuzz/rules.mak
-@@ -14,6 +14,7 @@ $(TARBALLS)/harfbuzz-$(HARFBUZZ_VERSION).tar.xz:
- 
- harfbuzz: harfbuzz-$(HARFBUZZ_VERSION).tar.xz .sum-harfbuzz
+@@ -16,6 +16,7 @@ harfbuzz: harfbuzz-$(HARFBUZZ_VERSION).tar.xz .sum-harfbuzz
  	$(UNPACK)
+ 	$(APPLY) $(SRC)/harfbuzz/0001-disable-building-hb-gpu-encode-all-app.patch
+ 	$(APPLY) $(SRC)/harfbuzz/0001-Ignore-Wunused-template.patch
 +	$(APPLY) $(SRC)/harfbuzz/0003-Use-http-to-download-ragel.patch
  	$(MOVE)
  
- DEPS_harfbuzz = freetype2 $(DEPS_freetype2)
+ DEPS_harfbuzz = freetype2 $(DEPS_freetype2) png $(DEPS_png)
 -- 
-2.50.1 (Apple Git-155)
+2.54.0 (Apple Git-157)
 

@@ -1,40 +1,47 @@
-From 4485d3f1cce21c098636d626c0e65c195e354907 Mon Sep 17 00:00:00 2001
+From cf5c8d304dc178ba56232ffc373a5dfd5a1cec1e Mon Sep 17 00:00:00 2001
 From: Yi Xie <imxieyi@users.noreply.github.com>
 Date: Tue, 15 Apr 2025 22:23:42 +0900
 Subject: [PATCH] Support additional HTTP headers for HTTP playback
 
+Like the cookies stored on a media, the headers stored with
+libvlc_media_header_jar_store() are replayed into a jar owned by the
+player when libvlc_media_player_play() is called. The http access and
+the adaptive demuxer inherit that jar through the "http-headers"
+variable. The player jar is cleared on each play so the headers of a
+media are not sent for the next one.
 ---
  include/vlc/libvlc_media.h                    |  30 ++++
- include/vlc_http.h                            |  34 ++++
- include/vlc_player.h                          |  10 ++
+ include/vlc_http.h                            |  33 ++++
+ include/vlc_player.h                          |  12 ++
  lib/libvlc.sym                                |   2 +
- lib/media.c                                   |  24 +++
- lib/media_internal.h                          |   1 +
- lib/media_player.c                            |   9 +
- modules/access/http/access.c                  |   6 +-
+ lib/media.c                                   |  43 +++++
+ lib/media_internal.h                          |   5 +
+ lib/media_player.c                            |  11 ++
+ modules/access/http/access.c                  |   4 +-
  modules/access/http/connmgr.c                 |   9 +-
  modules/access/http/connmgr.h                 |   6 +-
  modules/access/http/message.c                 |  14 ++
  modules/access/http/message.h                 |   3 +
  modules/access/http/outfile.c                 |   1 +
  modules/access/http/resource.c                |   1 +
+ modules/access/webdav.c                       |   2 +-
  modules/access_output/http-put.c              |   2 +-
  modules/demux/adaptive/http/AuthStorage.cpp   |   8 +
  modules/demux/adaptive/http/AuthStorage.hpp   |   2 +
  .../demux/adaptive/http/HTTPConnection.cpp    |   6 +-
  src/Makefile.am                               |   1 +
- src/input/access.c                            |   4 +
+ src/libvlccore.sym                            |   6 +
  src/meson.build                               |   1 +
- src/misc/httpheaders.c                        | 161 ++++++++++++++++++
- src/player/player.c                           |  30 ++++
- 23 files changed, 358 insertions(+), 7 deletions(-)
+ src/misc/httpheaders.c                        | 153 ++++++++++++++++++
+ src/player/player.c                           |  22 +++
+ 24 files changed, 369 insertions(+), 8 deletions(-)
  create mode 100644 src/misc/httpheaders.c
 
 diff --git a/include/vlc/libvlc_media.h b/include/vlc/libvlc_media.h
-index 25e8e7cc8d..8b3a28a371 100644
+index 1b9eb85acd..417d16c9de 100644
 --- a/include/vlc/libvlc_media.h
 +++ b/include/vlc/libvlc_media.h
-@@ -943,6 +943,36 @@ libvlc_media_cookie_jar_store( libvlc_media_t *p_md, const char *psz_cookie,
+@@ -743,6 +743,36 @@ libvlc_media_cookie_jar_store( libvlc_media_t *p_md, const char *psz_cookie,
  LIBVLC_API void
  libvlc_media_cookie_jar_clear( libvlc_media_t *p_md );
  
@@ -72,10 +79,10 @@ index 25e8e7cc8d..8b3a28a371 100644
  
  # ifdef __cplusplus
 diff --git a/include/vlc_http.h b/include/vlc_http.h
-index 9e705d5bfb..04dc0e189f 100644
+index 976f6e664a..1e8c0ff4f1 100644
 --- a/include/vlc_http.h
 +++ b/include/vlc_http.h
-@@ -99,4 +99,38 @@ VLC_API bool vlc_http_cookies_store( vlc_http_cookie_jar_t *jar,
+@@ -98,4 +98,37 @@ VLC_API bool vlc_http_cookies_store( vlc_http_cookie_jar_t *jar,
  VLC_API char *vlc_http_cookies_fetch( vlc_http_cookie_jar_t *jar, bool secure,
                                        const char *host, const char *path );
  
@@ -86,13 +93,12 @@ index 9e705d5bfb..04dc0e189f 100644
 +typedef int (*vlc_http_header_foreach_func) (void*, const char*, const char*);
 +
 +VLC_API vlc_http_header_jar_t * vlc_http_headers_new( void ) VLC_USED;
-+VLC_API vlc_http_header_jar_t * vlc_http_headers_copy( vlc_http_header_jar_t * old) VLC_USED;
 +VLC_API void vlc_http_headers_clear( vlc_http_header_jar_t * p_jar );
 +VLC_API void vlc_http_headers_destroy( vlc_http_header_jar_t * p_jar );
 +
 +/**
-+ * Parse a value of an incoming Set-Cookie header and append the
-+ * header to the header jar if appropriate.
++ * Store a header in the header jar, replacing any previous value of the
++ * header with the same (case-insensitive) name.
 + *
 + * @param jar header jar object
 + * @param name name of the header
@@ -115,31 +121,33 @@ index 9e705d5bfb..04dc0e189f 100644
 +
  #endif /* VLC_HTTP_H */
 diff --git a/include/vlc_player.h b/include/vlc_player.h
-index 90b246057c..dcd7fc8a27 100644
+index f21e763302..6a24c62dea 100644
 --- a/include/vlc_player.h
 +++ b/include/vlc_player.h
-@@ -468,6 +468,16 @@ vlc_player_Stop(vlc_player_t *player);
- VLC_API int
- vlc_player_SetCookies(vlc_player_t *player, void* cookies);
+@@ -126,6 +126,18 @@ vlc_player_Delete(vlc_player_t *player);
+ VLC_API struct vlc_http_cookie_jar_t *
+ vlc_player_GetCookieJar(vlc_player_t *player);
  
 +/**
-+ * Set HTTP headers for the player.
++ * Get the HTTP header jar shared by the player
 + *
-+ * @param player locked player instance
-+ * @param headers opaque vlc_array_t
-+ * @return VLC_SUCCESS or a VLC error code
++ * This is the jar inherited by the http access of any media played by this
++ * player. It is owned by the player and valid until vlc_player_Delete().
++ *
++ * @param player player instance created by vlc_player_New()
++ * @return the header jar, or NULL if the player has none
 + */
-+VLC_API int
-+vlc_player_SetHeaders(vlc_player_t *player, void* headers);
++VLC_API struct vlc_http_header_jar_t *
++vlc_player_GetHeaderJar(vlc_player_t *player);
 +
  /**
-  * Pause the playback
+  * Lock the player.
   *
 diff --git a/lib/libvlc.sym b/lib/libvlc.sym
-index 7277467fc5..c12c0ce18b 100644
+index 7b702ca6a7..c533f554ac 100644
 --- a/lib/libvlc.sym
 +++ b/lib/libvlc.sym
-@@ -219,6 +219,8 @@ libvlc_media_get_meta_extra_names
+@@ -223,6 +223,8 @@ libvlc_media_get_meta_extra_names
  libvlc_media_meta_extra_names_release
  libvlc_media_cookie_jar_store
  libvlc_media_cookie_jar_clear
@@ -149,30 +157,30 @@ index 7277467fc5..c12c0ce18b 100644
  libvlc_release
  libvlc_renderer_item_name
 diff --git a/lib/media.c b/lib/media.c
-index e5dc764b2c..469623a8a3 100644
+index acc8570f69..ee9f82cc44 100644
 --- a/lib/media.c
 +++ b/lib/media.c
-@@ -378,6 +378,7 @@ libvlc_media_t * libvlc_media_new_from_input_item(input_item_t *p_input_item )
-     p_md->req = NULL;
+@@ -229,6 +229,9 @@ static void media_destroy( void *libvlc_owner )
  
-     p_md->p_cookie_jar      = NULL;
-+    p_md->p_header_jar      = NULL;
-     libvlc_event_manager_init( &p_md->event_manager, p_md );
- 
-     input_item_Hold( p_md->p_input_item );
-@@ -509,6 +510,9 @@ void libvlc_media_release( libvlc_media_t *p_md )
-     if( p_md->p_cookie_jar )
-         vlc_http_cookies_destroy( p_md->p_cookie_jar );
+     media_cookies_clear( p_md );
  
 +    if( p_md->p_header_jar )
 +        vlc_http_headers_destroy( p_md->p_header_jar );
 +
-     input_item_Release( p_md->p_input_item );
+     free( p_md );
+ }
  
-     libvlc_event_manager_destroy( &p_md->event_manager );
-@@ -1228,3 +1232,23 @@ libvlc_media_cookie_jar_clear( libvlc_media_t *p_md )
-     if( p_md->p_cookie_jar )
-         vlc_http_cookies_clear( p_md->p_cookie_jar );
+@@ -274,6 +277,7 @@ libvlc_media_t * libvlc_media_new_from_input_item(input_item_t *p_input_item )
+     p_md->req = NULL;
+     p_md->p_cookies = NULL;
+     p_md->i_cookies = 0;
++    p_md->p_header_jar = NULL;
+ 
+     input_item_Hold( p_md->p_input_item );
+ 
+@@ -887,3 +891,42 @@ libvlc_media_cookies_replay( libvlc_media_t *p_md,
+                                 p_md->p_cookies[i].psz_host,
+                                 p_md->p_cookies[i].psz_path );
  }
 +
 +int
@@ -194,61 +202,83 @@ index e5dc764b2c..469623a8a3 100644
 +    if( p_md->p_header_jar )
 +        vlc_http_headers_clear( p_md->p_header_jar );
 +}
++
++static int
++media_header_replay_cb( void *opaque, const char *psz_name,
++                        const char *psz_value )
++{
++    vlc_http_header_jar_t *p_jar = opaque;
++    vlc_http_headers_store( p_jar, psz_name, psz_value );
++    return 0;
++}
++
++void
++libvlc_media_headers_replay( libvlc_media_t *p_md,
++                             vlc_http_header_jar_t *p_jar )
++{
++    vlc_http_headers_clear( p_jar );
++    if( p_md->p_header_jar )
++        vlc_http_headers_foreach( p_md->p_header_jar,
++                                  media_header_replay_cb, p_jar );
++}
 diff --git a/lib/media_internal.h b/lib/media_internal.h
-index 45fbfb2095..7060d3f93a 100644
+index e3ba8f254c..b6c2fd99ec 100644
 --- a/lib/media_internal.h
 +++ b/lib/media_internal.h
-@@ -52,6 +52,7 @@ struct libvlc_media_t
-     _Atomic libvlc_media_parsed_status_t parsed_status;
-     vlc_preparser_req *req;
-     vlc_http_cookie_jar_t *p_cookie_jar;
+@@ -67,12 +67,17 @@ struct libvlc_media_t
+ 
+     struct libvlc_media_cookie_t *p_cookies;
+     size_t i_cookies;
 +    vlc_http_header_jar_t *p_header_jar;
  };
  
+ /* Replay the cookies stored on p_md into p_jar. */
+ void libvlc_media_cookies_replay( libvlc_media_t *p_md,
+                                   vlc_http_cookie_jar_t *p_jar );
+ 
++/* Replace the content of p_jar with the headers stored on p_md. */
++void libvlc_media_headers_replay( libvlc_media_t *p_md,
++                                  vlc_http_header_jar_t *p_jar );
++
  /* Media Descriptor */
+ libvlc_media_t * libvlc_media_new_from_input_item( input_item_t * );
+ 
 diff --git a/lib/media_player.c b/lib/media_player.c
-index c0701fbb24..90f806cb2b 100644
+index 3fffa9145a..98bcc8c187 100644
 --- a/lib/media_player.c
 +++ b/lib/media_player.c
-@@ -644,6 +644,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
-     var_Create (mp, "sout", VLC_VAR_STRING);
-     var_Create (mp, "demux-filter", VLC_VAR_STRING);
-     var_Create (mp, "http-cookies", VLC_VAR_ADDRESS);
-+    var_Create (mp, "http-headers", VLC_VAR_ADDRESS);
+@@ -1056,6 +1056,17 @@ int libvlc_media_player_play( libvlc_media_player_t *p_mi )
  
-     /* Video */
-     var_Create (mp, "vout", VLC_VAR_STRING|VLC_VAR_DOINHERIT);
-@@ -993,6 +994,14 @@ int libvlc_media_player_play( libvlc_media_player_t *p_mi )
-         vlc_player_SetCookies(player, copy);
-     }
- 
-+    if( p_mi->p_md->p_header_jar )
-+    {
-+        vlc_value_t headers = { .p_address = p_mi->p_md->p_header_jar };
-+        var_SetChecked( p_mi, "http-headers", VLC_VAR_ADDRESS, headers );
-+        vlc_http_header_jar_t* copy = vlc_http_headers_copy(p_mi->p_md->p_header_jar);
-+        vlc_player_SetHeaders(player, copy);
-+    }
+         if( p_md != NULL && p_jar != NULL )
+             libvlc_media_cookies_replay( p_md, p_jar );
 +
++        /* Same for the additional HTTP headers, which replace the ones of
++         * the previously played media. */
++        vlc_http_header_jar_t *p_header_jar = vlc_player_GetHeaderJar( player );
++        if( p_header_jar != NULL )
++        {
++            if( p_md != NULL )
++                libvlc_media_headers_replay( p_md, p_header_jar );
++            else
++                vlc_http_headers_clear( p_header_jar );
++        }
+     }
  
      int ret = vlc_player_Start(player);
-     if (ret == VLC_SUCCESS)
 diff --git a/modules/access/http/access.c b/modules/access/http/access.c
-index 0373c1221d..9078de3976 100644
+index ffc38b749e..f775a1f1a6 100644
 --- a/modules/access/http/access.c
 +++ b/modules/access/http/access.c
-@@ -171,6 +171,10 @@ static int Open(vlc_object_t *obj)
-             jar = vlc_http_cookies_copy(jar);
-     }
+@@ -168,6 +168,8 @@ static int Open(vlc_object_t *obj)
+     if (var_InheritBool(obj, "http-forward-cookies"))
+         jar = var_InheritAddress(obj, "http-cookies");
  
 +    void *header_jar = var_InheritAddress(obj, "http-headers");
-+    if (header_jar)
-+        header_jar = vlc_http_headers_copy(header_jar);
 +
      struct vlc_credential crd;
      struct vlc_url_t crd_url;
      char *psz_realm = NULL;
-@@ -178,7 +182,7 @@ static int Open(vlc_object_t *obj)
+@@ -175,7 +177,7 @@ static int Open(vlc_object_t *obj)
      vlc_UrlParse(&crd_url, access->psz_url);
      vlc_credential_init(&crd, &crd_url);
  
@@ -326,14 +356,14 @@ index b7faa898af..78a10c8dd6 100644
  /**
   * Destroys an HTTP connection manager
 diff --git a/modules/access/http/message.c b/modules/access/http/message.c
-index f85c0ae0cb..c7bcd1d28e 100644
+index ba1a3f632c..5d45f913e0 100644
 --- a/modules/access/http/message.c
 +++ b/modules/access/http/message.c
 @@ -984,6 +984,20 @@ int vlc_http_msg_add_cookies(struct vlc_http_msg *m,
      return val;
  }
  
-+int vlc_http_add_header_internal(void *obj, const char* name, const char* value) {
++static int vlc_http_add_header_internal(void *obj, const char* name, const char* value) {
 +    struct vlc_http_msg *m = obj;
 +    return vlc_http_msg_add_header(m, name, "%s", value);
 +}
@@ -351,7 +381,7 @@ index f85c0ae0cb..c7bcd1d28e 100644
  {
      const char *auth;
 diff --git a/modules/access/http/message.h b/modules/access/http/message.h
-index f996387eec..d7b2e2fd51 100644
+index 9abfd131b3..68f9668c55 100644
 --- a/modules/access/http/message.h
 +++ b/modules/access/http/message.h
 @@ -30,6 +30,7 @@
@@ -362,7 +392,7 @@ index f996387eec..d7b2e2fd51 100644
  
  /**
   * Creates an HTTP request.
-@@ -158,6 +159,8 @@ void vlc_http_msg_get_cookies(const struct vlc_http_msg *,
+@@ -169,6 +170,8 @@ void vlc_http_msg_get_cookies(const struct vlc_http_msg *,
                                const char *host, const char *path);
  int vlc_http_msg_add_cookies(struct vlc_http_msg *,
                               struct vlc_http_cookie_jar_t *);
@@ -394,6 +424,19 @@ index d15b1decc4..c626ecaf93 100644
 +    vlc_http_msg_add_headers(req, vlc_http_mgr_get_header_jar(res->manager));
  
      /* TODO: vlc_http_msg_add_header(req, "TE", "gzip, deflate"); */
+ 
+diff --git a/modules/access/webdav.c b/modules/access/webdav.c
+index a744bf43c9..c5ce3dd524 100644
+--- a/modules/access/webdav.c
++++ b/modules/access/webdav.c
+@@ -525,7 +525,7 @@ static int Open(vlc_object_t *obj)
+     if (sys->path == NULL)
+         goto clean;
+ 
+-    sys->manager = vlc_http_mgr_create(obj, NULL);
++    sys->manager = vlc_http_mgr_create(obj, NULL, NULL);
+     if (sys->manager == NULL)
+         goto clean;
  
 diff --git a/modules/access_output/http-put.c b/modules/access_output/http-put.c
 index 21d4af3a6a..9548725001 100644
@@ -448,10 +491,10 @@ index 20c791dec0..5a1e5ec6f6 100644
      }
  }
 diff --git a/modules/demux/adaptive/http/HTTPConnection.cpp b/modules/demux/adaptive/http/HTTPConnection.cpp
-index c577336500..9847609fec 100644
+index deb1c2f934..0192bcd5d2 100644
 --- a/modules/demux/adaptive/http/HTTPConnection.cpp
 +++ b/modules/demux/adaptive/http/HTTPConnection.cpp
-@@ -88,10 +88,10 @@ const ConnectionParams & AbstractConnection::getRedirection() const
+@@ -89,10 +89,10 @@ const ConnectionParams & AbstractConnection::getRedirection() const
  class adaptive::http::LibVLCHTTPSource : public adaptive::BlockStreamInterface
  {
       public:
@@ -464,7 +507,7 @@ index c577336500..9847609fec 100644
              http_res = nullptr;
              totalRead = 0;
          }
-@@ -351,7 +351,7 @@ const struct vlc_http_resource_cbs LibVLCHTTPSource::callbacks =
+@@ -352,7 +352,7 @@ const struct vlc_http_resource_cbs LibVLCHTTPSource::callbacks =
  LibVLCHTTPConnection::LibVLCHTTPConnection(vlc_object_t *p_object_, AuthStorage *auth)
      : AbstractConnection( p_object_ )
  {
@@ -474,10 +517,10 @@ index c577336500..9847609fec 100644
      stream = nullptr;
      char *psz_useragent = var_InheritString(p_object_, "http-user-agent");
 diff --git a/src/Makefile.am b/src/Makefile.am
-index c226f8f57f..cb190d6076 100644
+index 9d93ba4df5..610c264398 100644
 --- a/src/Makefile.am
 +++ b/src/Makefile.am
-@@ -426,6 +426,7 @@ libvlccore_la_SOURCES = \
+@@ -434,6 +434,7 @@ libvlccore_la_SOURCES = \
  	misc/filter.c \
  	misc/filter_chain.c \
  	misc/httpcookies.c \
@@ -485,26 +528,35 @@ index c226f8f57f..cb190d6076 100644
  	misc/fingerprinter.c \
  	misc/text_style.c \
  	misc/sort.c \
-diff --git a/src/input/access.c b/src/input/access.c
-index 6e64aff76a..2b2c754f00 100644
---- a/src/input/access.c
-+++ b/src/input/access.c
-@@ -113,6 +113,10 @@ static stream_t *access_New(vlc_object_t *parent, input_thread_t *input,
-         if (cookies != NULL) {
-             var_SetAddress(access, "http-cookies", cookies);
-         }
-+        void* headers = var_GetAddress(input, "http-headers");
-+        if (headers != NULL) {
-+            var_SetAddress(access, "http-headers", headers);
-+        }
-     }
- 
-     if (unlikely(access->psz_url == NULL))
+diff --git a/src/libvlccore.sym b/src/libvlccore.sym
+index 258eab9e12..87ac691f98 100644
+--- a/src/libvlccore.sym
++++ b/src/libvlccore.sym
+@@ -154,6 +154,11 @@ vlc_http_cookies_destroy
+ vlc_http_cookies_clear
+ vlc_http_cookies_store
+ vlc_http_cookies_fetch
++vlc_http_headers_new
++vlc_http_headers_clear
++vlc_http_headers_destroy
++vlc_http_headers_store
++vlc_http_headers_foreach
+ httpd_ClientIP
+ httpd_FileDelete
+ httpd_FileNew
+@@ -872,6 +877,7 @@ vlc_player_GetCapabilities
+ vlc_player_GetCategoryDelay
+ vlc_player_GetCategoryLanguage
+ vlc_player_GetCookieJar
++vlc_player_GetHeaderJar
+ vlc_player_GetCurrentMedia
+ vlc_player_GetNextMedia
+ vlc_player_GetError
 diff --git a/src/meson.build b/src/meson.build
-index 02bb1a1f29..ea6fd10718 100644
+index d142f56186..50c93a836d 100644
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -280,6 +280,7 @@ libvlccore_sources_base = files(
+@@ -294,6 +294,7 @@ libvlccore_sources_base = files(
      'misc/filter.c',
      'misc/filter_chain.c',
      'misc/httpcookies.c',
@@ -514,10 +566,10 @@ index 02bb1a1f29..ea6fd10718 100644
      'misc/sort.c',
 diff --git a/src/misc/httpheaders.c b/src/misc/httpheaders.c
 new file mode 100644
-index 0000000000..107c8e3b6a
+index 0000000000..ec0d310ed2
 --- /dev/null
 +++ b/src/misc/httpheaders.c
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,153 @@
 +/*****************************************************************************
 + * httpheaders.c: HTTP headers utilities
 + *****************************************************************************
@@ -570,14 +622,6 @@ index 0000000000..107c8e3b6a
 +    free(header);
 +}
 +
-+VLC_MALLOC VLC_USED
-+static http_header_t * header_copy(http_header_t * old) {
-+    http_header_t* new = malloc(sizeof(http_header_t));
-+    new->psz_name = strdup(old->psz_name);
-+    new->psz_value = strdup(old->psz_value);
-+    return new;
-+}
-+
 +struct vlc_http_header_jar_t
 +{
 +    vlc_array_t headers;
@@ -596,23 +640,19 @@ index 0000000000..107c8e3b6a
 +    return jar;
 +}
 +
-+vlc_http_header_jar_t * vlc_http_headers_copy( vlc_http_header_jar_t * old)
-+{
-+    vlc_http_header_jar_t* copy = vlc_http_headers_new();
-+    for( size_t i = 0; i < vlc_array_count( &old->headers ); i++ )
-+        vlc_array_append(&copy->headers, header_copy(vlc_array_item_at_index(&old->headers, i)));
-+    return copy;
-+}
-+
 +void vlc_http_headers_clear( vlc_http_header_jar_t * p_jar )
 +{
 +    if ( !p_jar )
 +        return;
 +
++    vlc_mutex_lock( &p_jar->lock );
++
 +    for( size_t i = 0; i < vlc_array_count( &p_jar->headers ); i++ )
 +        header_destroy( vlc_array_item_at_index( &p_jar->headers, i ) );
 +
 +    vlc_array_clear( &p_jar->headers );
++
++    vlc_mutex_unlock( &p_jar->lock );
 +}
 +
 +void vlc_http_headers_destroy( vlc_http_header_jar_t * p_jar )
@@ -646,12 +686,16 @@ index 0000000000..107c8e3b6a
 +    }
 +    http_header_t *header = malloc(sizeof (*header));
 +    if (unlikely(header == NULL))
++    {
++        vlc_mutex_unlock( &p_jar->lock );
 +        return false;
++    }
 +
 +    header->psz_name = strdup(name);
 +    header->psz_value = strdup(value);
 +
-+    bool b_ret = (vlc_array_append( &p_jar->headers, header ) == 0);
++    bool b_ret = header->psz_name != NULL && header->psz_value != NULL
++              && vlc_array_append( &p_jar->headers, header ) == 0;
 +    if( !b_ret )
 +        header_destroy( header );
 +
@@ -680,38 +724,10 @@ index 0000000000..107c8e3b6a
 +    return val;
 +}
 diff --git a/src/player/player.c b/src/player/player.c
-index 12bc0b1317..f4c0f37c15 100644
+index 6f9b33921f..41f1fbccaa 100644
 --- a/src/player/player.c
 +++ b/src/player/player.c
-@@ -1252,6 +1252,12 @@ vlc_player_Start(vlc_player_t *player)
-         var_SetAddress(player->input->thread, "http-cookies", cookies);
-     }
- 
-+    void* headers = var_GetAddress(player, "http-headers");
-+    if (headers != NULL) {
-+        var_Create(player->input->thread, "http-headers", VLC_VAR_ADDRESS);
-+        var_SetAddress(player->input->thread, "http-headers", headers);
-+    }
-+
-     if (player->start_paused)
-     {
-         var_Create(player->input->thread, "start-paused", VLC_VAR_BOOL);
-@@ -1276,6 +1282,14 @@ vlc_player_SetCookies(vlc_player_t *player, void* cookies)
-     return var_SetAddress(player, "http-cookies", cookies);
- }
- 
-+int
-+vlc_player_SetHeaders(vlc_player_t *player, void* headers) {
-+    void* old = var_GetAddress(player, "http-headers");
-+    if (old != NULL)
-+        vlc_http_headers_destroy(old);
-+    return var_SetAddress(player, "http-headers", headers);
-+}
-+
- int
- vlc_player_Stop(vlc_player_t *player)
- {
-@@ -2068,6 +2082,13 @@ vlc_player_Delete(vlc_player_t *player)
+@@ -2091,6 +2091,13 @@ vlc_player_Delete(vlc_player_t *player)
          vlc_http_cookies_destroy(cookies);
      }
  
@@ -725,7 +741,20 @@ index 12bc0b1317..f4c0f37c15 100644
      assert(!vlc_mutex_held(&player->lock));
  
      vlc_object_delete(player);
-@@ -2148,6 +2169,15 @@ vlc_player_New(vlc_object_t *parent, enum vlc_player_lock_type lock_type)
+@@ -2102,6 +2109,12 @@ vlc_player_GetCookieJar(vlc_player_t *player)
+     return var_GetAddress(player, "http-cookies");
+ }
+ 
++vlc_http_header_jar_t *
++vlc_player_GetHeaderJar(vlc_player_t *player)
++{
++    return var_GetAddress(player, "http-headers");
++}
++
+ vlc_player_t *
+ vlc_player_New(vlc_object_t *parent, enum vlc_player_lock_type lock_type)
+ {
+@@ -2177,6 +2190,15 @@ vlc_player_New(vlc_object_t *parent, enum vlc_player_lock_type lock_type)
          VAR_CREATE("http-cookies", VLC_VAR_ADDRESS);
          var_SetChecked(player, "http-cookies", VLC_VAR_ADDRESS, cookies);
      }
@@ -733,7 +762,7 @@ index 12bc0b1317..f4c0f37c15 100644
 +    /* Initialize the shared HTTP header jar */
 +    vlc_value_t headers;
 +    headers.p_address = vlc_http_headers_new();
-+    if (likely(cookies.p_address != NULL))
++    if (likely(headers.p_address != NULL))
 +    {
 +        VAR_CREATE("http-headers", VLC_VAR_ADDRESS);
 +        var_SetChecked(player, "http-headers", VLC_VAR_ADDRESS, headers);
@@ -742,5 +771,5 @@ index 12bc0b1317..f4c0f37c15 100644
  
      player->resource = input_resource_New(VLC_OBJECT(player));
 -- 
-2.50.1 (Apple Git-155)
+2.54.0 (Apple Git-157)
 
